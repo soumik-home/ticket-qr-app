@@ -5,6 +5,29 @@ app = Flask(__name__)
 
 DATABASE = 'database.db'
 
+# Database initialization function
+def init_db():
+    """Initializes the database and creates the tickets table if it doesn't exist."""
+    conn = sqlite3.connect(DATABASE)  # Create or open the database file
+    cursor = conn.cursor()
+
+    # Create the tickets table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL
+        );
+    ''')
+
+    # Enable WAL mode for better concurrency
+    cursor.execute('PRAGMA journal_mode=WAL;')
+    conn.commit()  # Commit the changes
+    conn.close()   # Close the database connection
+
+# Initialize the database when the app starts
+init_db()
+
 # Database connection setup with WAL mode enabled
 def get_db():
     """Open a new database connection if none exists yet."""
