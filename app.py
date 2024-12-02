@@ -1,6 +1,8 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, send_file
 import sqlite3
 import uuid
+import qrcode
+import io
 
 app = Flask(__name__)
 DATABASE = 'tickets.db'
@@ -35,28 +37,43 @@ def generate_ticket_id():
 # Routes
 @app.route('/')
 def home():
-    """Homepage with a form to create a ticket."""
-    return render_template('create_ticket.html')
+    """Homepage to display the QR code for /create-ticket."""
+    # Generate a QR code for the /create-ticket URL
+    qr_url = request.url_root + 'create-ticket'  # e.g., http://127.0.0.1:5000/create-ticket
+    qr = qrcode.make(qr_url)
+
+    # Save the QR code to a BytesIO stream for rendering
+    qr_stream = io.BytesIO()
+    qr.save(qr_stream, 'PNG')
+    qr_stream.seek(0)
+
+    return render_template('home.html', qr_code=qr_stream)
 
 
-@app.route('/create-ticket', methods=['POST'])
+@app.route('/create-ticket', methods=['GET', 'POST'])
 def create_ticket():
     """Handle ticket creation and prevent duplicates."""
-    name = request.form['name']
-    email = request.form['email']
-    ticket_id = generate_ticket_id()
+    if request.method == 'GET':
+        # Display the form
+        return render_template('create_ticket.html')
 
-    # Store in the database
-    db = get_db()
-    try:
-        db.execute(
-            'INSERT INTO tickets (name, email, ticket_id) VALUES (?, ?, ?)',
-            (name, email, ticket_id)
-        )
-        db.commit()
-        return render_template('ticket.html', name=name, ticket_id=ticket_id)
-    except sqlite3.IntegrityError:
-        return "Error: This email has already been used to create a ticket."
+    elif request.method == 'POST':
+        # Handle form submission
+        name = request.form['name']
+        email = request.form['email']
+        ticket_id = generate_ticket_id()
+
+        # Store in the database
+        db = get_db()
+        try:
+            db.execute(
+                'INSERT INTO tickets (name, email, ticket_id) VALUES (?, ?, ?)',
+                (name, email, ticket_id)
+            )
+            db.commit()
+            return render_template('ticket.html', name=name, ticket_id=ticket_id)
+        except sqlite3.IntegrityError:
+            return "Error: This email has already been used to create a ticket."
 
 
 @app.route('/list-tickets')
