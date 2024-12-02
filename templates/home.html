@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan QR Code</title>
+</head>
+<body>
+    <h1>Welcome to Vidyashilp Academy</h1>
+    <p>Scan the QR code below to access the EVS Exhibition Ticket Creation Form:</p>
+    <img src="data:image/png;base64,{{ qr_code.getvalue()|b64encode }}" alt="QR Code">
+</body>
+</html>
