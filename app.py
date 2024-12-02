@@ -1,57 +1,76 @@
-from flask import Flask, render_template, request, redirect, url_for, send_file
-import qrcode
-from io import BytesIO
+from flask import Flask, render_template, request, redirect, url_for
+import sqlite3
 import uuid
 
 app = Flask(__name__)
+DATABASE = 'tickets.db'
 
-# In-memory storage for simplicity (not production-safe)
-users = {}
 
+# Database setup and connection
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row  # To return rows as dictionaries
+    return conn
+
+
+def init_db():
+    """Initialize the database with the tickets table."""
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tickets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                ticket_id TEXT UNIQUE NOT NULL
+            )
+        ''')
+        conn.commit()
+
+
+# Helper to generate a unique ticket ID
+def generate_ticket_id():
+    return str(uuid.uuid4())
+
+
+# Routes
 @app.route('/')
 def home():
-    """Homepage with a QR code."""
-    unique_id = str(uuid.uuid4())
-    link = url_for('create_ticket', unique_id=unique_id, _external=True)
-    
-    # Generate QR code
-    qr = qrcode.QRCode(box_size=10, border=5)
-    qr.add_data(link)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    # Save QR code as bytes
-    img_io = BytesIO()
-    img.save(img_io, 'PNG')
-    img_io.seek(0)
-    
-    return send_file(img_io, mimetype='image/png')
-
-@app.route('/create-ticket/<unique_id>', methods=['GET', 'POST'])
-def create_ticket(unique_id):
-    """Page to input user details and generate a ticket."""
-    if request.method == 'POST':
-        # Save user details
-        name = request.form['name']
-        email = request.form['email']
-        users[unique_id] = {'name': name, 'email': email}
-        
-        # Redirect to the ticket page
-        return redirect(url_for('ticket', unique_id=unique_id))
-    
+    """Homepage with a form to create a ticket."""
     return render_template('create_ticket.html')
 
-@app.route('/ticket/<unique_id>')
-def ticket(unique_id):
-    """Display the personalized ticket."""
-    user = users.get(unique_id)
-    if not user:
-        return "Invalid ticket ID!", 404
-    
-    name = user['name']
-    email = user['email']
-    
-    return render_template('ticket.html', name=name, email=email)
+
+@app.route('/create-ticket', methods=['POST'])
+def create_ticket():
+    """Handle ticket creation and prevent duplicates."""
+    name = request.form['name']
+    email = request.form['email']
+    ticket_id = generate_ticket_id()
+
+    # Store in the database
+    db = get_db()
+    try:
+        db.execute(
+            'INSERT INTO tickets (name, email, ticket_id) VALUES (?, ?, ?)',
+            (name, email, ticket_id)
+        )
+        db.commit()
+        return render_template('ticket.html', name=name, ticket_id=ticket_id)
+    except sqlite3.IntegrityError:
+        return "Error: This email has already been used to create a ticket."
+
+
+@app.route('/list-tickets')
+def list_tickets():
+    """Display all stored tickets."""
+    db = get_db()
+    tickets = db.execute('SELECT * FROM tickets').fetchall()
+    return render_template('list_tickets.html', tickets=tickets)
+
+
+# Initialize the database on app startup
+with app.app_context():
+    init_db()
+
 
 if __name__ == '__main__':
     app.run(debug=True)
