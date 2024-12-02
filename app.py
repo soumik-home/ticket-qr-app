@@ -1,97 +1,53 @@
-from flask import Flask, render_template, request, redirect, url_for, send_file
 import sqlite3
-import uuid
-import qrcode
-import io
-import base64
+from flask import Flask, request, render_template, g
 
 app = Flask(__name__)
-DATABASE = 'tickets.db'
 
+DATABASE = 'database.db'
 
-# Database setup and connection
+# Database connection setup with WAL mode enabled
 def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # To return rows as dictionaries
-    return conn
+    """Open a new database connection if none exists yet."""
+    if not hasattr(g, 'sqlite_db'):
+        g.sqlite_db = sqlite3.connect(DATABASE, check_same_thread=False)
+        g.sqlite_db.row_factory = sqlite3.Row  # Allows access by column name
+        # Enable WAL mode for better concurrency
+        g.sqlite_db.execute('PRAGMA journal_mode=WAL;')
+        g.sqlite_db.commit()
+    return g.sqlite_db
 
-
-def init_db():
-    """Initialize the database with the tickets table."""
-    with sqlite3.connect(DATABASE) as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS tickets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                ticket_id TEXT UNIQUE NOT NULL
-            )
-        ''')
-        conn.commit()
-
-
-# Helper to generate a unique ticket ID
-def generate_ticket_id():
-    return str(uuid.uuid4())
-
-
-# Routes
+# Route to view all tickets (for debugging purposes)
 @app.route('/')
 def home():
-    """Homepage to display the QR code for /create-ticket."""
-    # Generate a QR code for the /create-ticket URL
-    qr_url = request.url_root + 'create-ticket'  # e.g., http://127.0.0.1:5000/create-ticket
-    qr = qrcode.make(qr_url)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM tickets;")
+    result = cursor.fetchall()
+    conn.close()
+    return render_template('index.html', result=result)
 
-    # Save the QR code to a BytesIO stream
-    qr_stream = io.BytesIO()
-    qr.save(qr_stream, 'PNG')
-    qr_stream.seek(0)
-
-    # Encode the QR code as a base64 string
-    qr_base64 = base64.b64encode(qr_stream.getvalue()).decode('utf-8')
-
-    return render_template('home.html', qr_code=qr_base64)
-
-
-@app.route('/create-ticket', methods=['GET', 'POST'])
+# Route to create a new ticket (POST)
+@app.route('/create-ticket', methods=['POST'])
 def create_ticket():
-    """Handle ticket creation and prevent duplicates."""
-    if request.method == 'GET':
-        # Display the form
-        return render_template('create_ticket.html')
+    # Get the data from the form
+    name = request.form['name']
+    email = request.form['email']
+    
+    # Insert the ticket info into the database
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO tickets (name, email) VALUES (?, ?)", (name, email))
+    conn.commit()  # Commit the transaction
+    conn.close()
+    
+    return render_template('ticket.html', name=name)
 
-    elif request.method == 'POST':
-        # Handle form submission
-        name = request.form['name']
-        email = request.form['email']
-        ticket_id = generate_ticket_id()
-
-        # Store in the database
-        db = get_db()
-        try:
-            db.execute(
-                'INSERT INTO tickets (name, email, ticket_id) VALUES (?, ?, ?)',
-                (name, email, ticket_id)
-            )
-            db.commit()
-            return render_template('ticket.html', name=name, ticket_id=ticket_id)
-        except sqlite3.IntegrityError:
-            return "Error: This email has already been used to create a ticket."
-
-
-@app.route('/list-tickets')
-def list_tickets():
-    """Display all stored tickets."""
-    db = get_db()
-    tickets = db.execute('SELECT * FROM tickets').fetchall()
-    return render_template('list_tickets.html', tickets=tickets)
-
-
-# Initialize the database on app startup
-with app.app_context():
-    init_db()
-
+# Close the database connection after each request
+@app.teardown_appcontext
+def close_db(error):
+    """Closes the database after each request."""
+    if hasattr(g, 'sqlite_db'):
+        g.sqlite_db.close()
 
 if __name__ == '__main__':
     app.run(debug=True)
