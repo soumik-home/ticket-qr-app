@@ -1,5 +1,7 @@
 import sqlite3
-from flask import Flask, request, render_template, g
+import qrcode
+from flask import Flask, render_template, request, redirect, url_for, send_file
+from io import BytesIO
 
 app = Flask(__name__)
 
@@ -7,11 +9,8 @@ DATABASE = 'database.db'
 
 # Database initialization function
 def init_db():
-    """Initializes the database and creates the tickets table if it doesn't exist."""
-    conn = sqlite3.connect(DATABASE)  # Create or open the database file
+    conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-
-    # Create the tickets table if it doesn't exist
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,58 +18,62 @@ def init_db():
             email TEXT NOT NULL
         );
     ''')
-
-    # Enable WAL mode for better concurrency
     cursor.execute('PRAGMA journal_mode=WAL;')
-    conn.commit()  # Commit the changes
-    conn.close()   # Close the database connection
+    conn.commit()
+    conn.close()
 
 # Initialize the database when the app starts
 init_db()
 
-# Database connection setup with WAL mode enabled
-def get_db():
-    """Open a new database connection if none exists yet."""
-    if not hasattr(g, 'sqlite_db'):
-        g.sqlite_db = sqlite3.connect(DATABASE, check_same_thread=False)
-        g.sqlite_db.row_factory = sqlite3.Row  # Allows access by column name
-        # Enable WAL mode for better concurrency
-        g.sqlite_db.execute('PRAGMA journal_mode=WAL;')
-        g.sqlite_db.commit()
-    return g.sqlite_db
+# Function to generate QR code for the "create ticket" page
+def generate_qr_code():
+    # URL of the create-ticket page (this would be dynamic based on your setup)
+    create_ticket_url = url_for('create_ticket', _external=True)  # _external generates a full URL
 
-# Route to view all tickets (for debugging purposes)
+    # Generate the QR code
+    img = qrcode.make(create_ticket_url)
+
+    # Save the image to a BytesIO object so it can be sent directly as a response
+    img_io = BytesIO()
+    img.save(img_io, 'PNG')
+    img_io.seek(0)
+
+    return img_io
+
 @app.route('/')
 def home():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tickets;")
-    result = cursor.fetchall()
-    conn.close()
-    return render_template('index.html', result=result)
+    # Generate the QR code for the create ticket URL
+    img_io = generate_qr_code()
 
-# Route to create a new ticket (POST)
-@app.route('/create-ticket', methods=['POST'])
+    # Display the QR code and provide a link to create the ticket
+    return render_template('index.html', qr_code=img_io)
+
+@app.route('/create-ticket', methods=['GET', 'POST'])
 def create_ticket():
-    # Get the data from the form
-    name = request.form['name']
-    email = request.form['email']
-    
-    # Insert the ticket info into the database
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO tickets (name, email) VALUES (?, ?)", (name, email))
-    conn.commit()  # Commit the transaction
-    conn.close()
-    
-    return render_template('ticket.html', name=name)
+    if request.method == 'POST':
+        # Get form data
+        name = request.form['name']
+        email = request.form['email']
 
-# Close the database connection after each request
-@app.teardown_appcontext
-def close_db(error):
-    """Closes the database after each request."""
-    if hasattr(g, 'sqlite_db'):
-        g.sqlite_db.close()
+        # Insert the ticket data into the database
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO tickets (name, email) VALUES (?, ?)", (name, email))
+        conn.commit()
+        conn.close()
 
+        # Return a confirmation message
+        return render_template('ticket.html', name=name)
+
+    # Display the ticket creation form
+    return render_template('create_ticket.html')
+
+@app.route('/qr-code')
+def qr_code():
+    # Generate and send QR code image for download
+    img_io = generate_qr_code()
+    return send_file(img_io, mimetype='image/png', as_attachment=True, download_name='ticket_qr_code.png')
+
+# Run the app
 if __name__ == '__main__':
     app.run(debug=True)
