@@ -3,6 +3,7 @@ import sqlite3
 import uuid
 import qrcode
 import io
+import base64
 
 app = Flask(__name__)
 DATABASE = 'tickets.db'
