@@ -42,12 +42,15 @@ def home():
     qr_url = request.url_root + 'create-ticket'  # e.g., http://127.0.0.1:5000/create-ticket
     qr = qrcode.make(qr_url)
 
-    # Save the QR code to a BytesIO stream for rendering
+    # Save the QR code to a BytesIO stream
     qr_stream = io.BytesIO()
     qr.save(qr_stream, 'PNG')
     qr_stream.seek(0)
 
-    return render_template('home.html', qr_code=qr_stream)
+    # Encode the QR code as a base64 string
+    qr_base64 = base64.b64encode(qr_stream.getvalue()).decode('utf-8')
+
+    return render_template('home.html', qr_code=qr_base64)
 
 
 @app.route('/create-ticket', methods=['GET', 'POST'])
