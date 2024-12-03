@@ -1,5 +1,6 @@
 import sqlite3
 import qrcode
+import base64
 from flask import Flask, render_template, request, redirect, url_for, send_file
 from io import BytesIO
 
@@ -33,20 +34,29 @@ def generate_qr_code():
     # Generate the QR code
     img = qrcode.make(create_ticket_url)
 
-    # Save the image to a BytesIO object so it can be sent directly as a response
+    # Save the image to a BytesIO object
     img_io = BytesIO()
     img.save(img_io, 'PNG')
     img_io.seek(0)
 
     return img_io
 
+# Custom Jinja2 filter to base64-encode data
+def b64encode(data):
+    return base64.b64encode(data).decode('utf-8')
+
+# Register the custom filter in Flask's Jinja environment
+app.jinja_env.filters['b64encode'] = b64encode
+
 @app.route('/')
 def home():
     # Generate the QR code for the create ticket URL
     img_io = generate_qr_code()
 
-    # Display the QR code and provide a link to create the ticket
-    return render_template('index.html', qr_code=img_io)
+    # Encode the QR code in base64 to embed it directly into the HTML
+    qr_code_base64 = b64encode(img_io.getvalue())
+
+    return render_template('index.html', qr_code=qr_code_base64)
 
 @app.route('/create-ticket', methods=['GET', 'POST'])
 def create_ticket():
