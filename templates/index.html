@@ -8,8 +8,8 @@
 <body>
     <h1>Scan the QR Code to Create Your Ticket</h1>
 
-    <!-- Display QR Code Image -->
-    <img src="data:image/png;base64,{{ qr_code|b64encode }}" alt="QR Code">
+    <!-- Display the Base64-encoded QR Code -->
+    <img src="data:image/png;base64,{{ qr_code }}" alt="QR Code">
 
     <p>Or <a href="{{ url_for('create_ticket') }}">click here</a> to create a ticket directly.</p>
 </body>
